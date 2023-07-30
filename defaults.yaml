@@ -1,0 +1,9 @@
+---
+loginTimeout: 0
+tokenTimeout: 0
+itemUri: ""
+itemUser: ""
+itemPassword: ""
+dbServiceUri: ""
+dbServiceUser: ""
+dbServicePass: ""

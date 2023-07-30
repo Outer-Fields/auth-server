@@ -1,0 +1,9 @@
+---
+loginTimeout: 14400
+tokenTimeout: 14400
+itemUri: ""
+itemUser: ""
+itemPassword: ""
+dbServiceUri: ""
+dbServiceUser: ""
+dbServicePass: ""
