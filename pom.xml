@@ -61,13 +61,15 @@
 			<version>2.14.2</version>
 		</dependency>
 
+		<dependency>
+			<groupId>com.fasterxml.jackson.dataformat</groupId>
+			<artifactId>jackson-dataformat-yaml</artifactId>
+			<version>2.14.2</version>
+		</dependency>
+
 	</dependencies>
 
-	<dependency>
-		<groupId>com.fasterxml.jackson.dataformat</groupId>
-		<artifactId>jackson-dataformat-yaml</artifactId>
-		<version>2.14.2</version>
-	</dependency>
+
 
 
 	<build>

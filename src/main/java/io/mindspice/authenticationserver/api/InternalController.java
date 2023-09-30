@@ -13,15 +13,21 @@ import org.springframework.web.bind.annotation.*;
 @RestController
 @RequestMapping("/internal")
 public class InternalController {
-    private final AuthService aUthService;
+    private final AuthService authService;
 
     @Autowired
-    public InternalController(AuthService authService) { this.aUthService = authService; }
+    public InternalController(AuthService authService) { this.authService = authService; }
 
     @PostMapping("/player_id_from_token")
     public ResponseEntity<Integer> playerIdFromToken(@RequestBody String req) throws JsonProcessingException {
         String token = JsonUtils.readTree(req).get("token").asText();
-        return new ResponseEntity<>(aUthService.getIdForToken(token), HttpStatus.OK);
+        return new ResponseEntity<>(authService.getIdForToken(token), HttpStatus.OK);
+    }
+
+    @PostMapping("/authenticate")
+    public ResponseEntity<Integer> authenticate(@RequestBody String req) throws JsonProcessingException {
+        String token = JsonUtils.readTree(req).get("token").asText();
+        return new ResponseEntity<>(authService.validateTempAuth(token), HttpStatus.OK);
     }
 
     @PostMapping("/health")

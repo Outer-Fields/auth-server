@@ -6,21 +6,15 @@ import io.mindspice.authenticationserver.util.Crypto;
 
 public record Register(
         String username,
-       @JsonProperty("display_name") String displayName,
+        @JsonProperty("display_name") String displayName,
         String password,
-        String address,
+        String offer,
         String captcha
 ) {
     public Register {
+        username = username.toLowerCase();
         password = Crypto.genPassHash(password);
     }
 
-    public boolean isPwCorrect() {
-        return password.length() == 64;
-    }
-
-    public boolean isAddressCorrect() {
-        return address.length() == 62;
-    }
 
 }

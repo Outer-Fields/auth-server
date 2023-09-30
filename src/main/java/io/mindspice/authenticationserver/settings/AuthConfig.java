@@ -35,6 +35,7 @@ public class AuthConfig {
         } catch (IOException e) {
             throw new RuntimeException("Failed to read config file.", e);
         }
+        System.out.println(get().toString());
     }
 
     public static AuthConfig get() {
@@ -47,5 +48,20 @@ public class AuthConfig {
         mapper.setSerializationInclusion(JsonInclude.Include.ALWAYS);
         File yamlFile = new File("defaults.yaml");
         mapper.writeValue(yamlFile, new AuthConfig());
+    }
+
+    @Override
+    public String toString() {
+        final StringBuilder sb = new StringBuilder("AuthConfig: ");
+        sb.append("\n  loginTimeout: ").append(loginTimeout);
+        sb.append(",\n  tokenTimeout: ").append(tokenTimeout);
+        sb.append(",\n  itemUri: \"").append(itemUri).append('\"');
+        sb.append(",\n  itemUser: \"").append(itemUser).append('\"');
+        sb.append(",\n  itemPassword: \"").append(itemPassword).append('\"');
+        sb.append(",\n  dbServiceUri: \"").append(dbServiceUri).append('\"');
+        sb.append(",\n  dbServiceUser: \"").append(dbServiceUser).append('\"');
+        sb.append(",\n  dbServicePass: \"").append(dbServicePass).append('\"');
+        sb.append("\n");
+        return sb.toString();
     }
 }

@@ -1,5 +1,7 @@
 package io.mindspice.authenticationserver.data;
 
+import io.mindspice.authenticationserver.settings.AuthConfig;
+
 import java.time.Instant;
 
 
@@ -7,7 +9,7 @@ public  class Attempt {
     int attempts;
     long lastAttempt;
     int maxAttempts = 5;
-    int timeoutSec = 1200;
+    long timeoutSec = AuthConfig.get().loginTimeout;
 
     public Attempt() {
         this.attempts = 1;

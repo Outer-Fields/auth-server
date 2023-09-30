@@ -1,11 +1,9 @@
 package io.mindspice.authenticationserver.service;
 
 import io.mindspice.authenticationserver.data.Attempt;
-import io.mindspice.authenticationserver.data.TokenInfo;
 import io.mindspice.authenticationserver.data.incoming.Auth;
 import io.mindspice.authenticationserver.data.incoming.Register;
 import io.mindspice.authenticationserver.data.outgoing.Authorization;
-import io.mindspice.authenticationserver.data.outgoing.ReturnCode;
 import io.mindspice.authenticationserver.http.HttpClient;
 import io.mindspice.authenticationserver.settings.AuthConfig;
 import io.mindspice.authenticationserver.util.Crypto;
@@ -25,8 +23,10 @@ import org.springframework.http.HttpStatus;
 
 public class AuthService {
 
-    private final ConcurrentHashMap<String, Attempt> attemptTable = new ConcurrentHashMap<>();
-    private final ConcurrentHashMap<String, TokenInfo> tokenTable = new ConcurrentHashMap<>();
+    private final Map<String, Attempt> attemptTable = new ConcurrentHashMap<>();
+    private final Map<String, Pair<Integer, Long>> tokenTable = new ConcurrentHashMap<>();
+    private final Map<String, Pair<String, Long>> sessionTable = new ConcurrentHashMap<>();
+    private final Map<String, Pair<Integer, Long>> tempAuthTokens = new ConcurrentHashMap<>();
     private final ScheduledExecutorService exec = Executors.newSingleThreadScheduledExecutor();
     private final OkraAuthAPI authAPI;
     private final ProfanityCheck profanityCheck;
@@ -43,28 +43,55 @@ public class AuthService {
 
     public void init() {
         Runnable timeoutCleanUp = () -> {
-            Set<String> keysToRemove = attemptTable.entrySet().stream()
+            Set<String> attemptRemovals = attemptTable.entrySet().stream()
                     .filter(entry -> entry.getValue().isRolledOff())
                     .map(Map.Entry::getKey)
                     .collect(Collectors.toSet());
-            keysToRemove.forEach(attemptTable::remove);
+
+
+            Set<String> tokenRemovals = tokenTable.entrySet().stream()
+                    .filter(entry -> Instant.now().getEpochSecond() - entry.getValue().second() > AuthConfig.get().tokenTimeout)
+                    .map(Map.Entry::getKey)
+                    .collect(Collectors.toSet());
+
+            Set<String> sessionRemovals = sessionTable.entrySet().stream()
+                    .filter(entry -> Instant.now().getEpochSecond() - entry.getValue().second() > 60 * 10)
+                    .map(Map.Entry::getKey)
+                    .collect(Collectors.toSet());
+
+            Set<String> tempAuthRemovals = tempAuthTokens.entrySet().stream()
+                    .filter(entry -> Instant.now().getEpochSecond() - entry.getValue().second() > 60)
+                    .map(Map.Entry::getKey)
+                    .collect(Collectors.toSet());
+
+            attemptRemovals.forEach(attemptTable::remove);
+            tokenRemovals.forEach(tokenTable::remove);
+            sessionRemovals.forEach(sessionTable::remove);
+            tempAuthRemovals.forEach(tempAuthTokens::remove);
         };
         exec.scheduleAtFixedRate(timeoutCleanUp, 0, 60, TimeUnit.SECONDS);
 
-        Runnable tokenTimeout = () -> {
-            Set<String> keysToRemove = tokenTable.entrySet().stream()
-                    .filter(entry -> Instant.now().getEpochSecond() - entry.getValue().authTime() > AuthConfig.get().tokenTimeout)
-                    .map(Map.Entry::getKey)
-                    .collect(Collectors.toSet());
-            keysToRemove.forEach(tokenTable::remove);
-        };
-        exec.scheduleAtFixedRate(tokenTimeout, 30, 60, TimeUnit.SECONDS);
+    }
 
+    public Map<String, Pair<String, Long>> getSessionTable() {
+        return sessionTable;
+    }
+
+    public String newTempAuth(int playerId) {
+        String authToken = Crypto.getToken();
+        tempAuthTokens.put(authToken, new Pair<>(playerId, Instant.now().getEpochSecond()));
+        return authToken;
+    }
+
+    public int validateTempAuth(String token) {
+        Pair<Integer, Long> t = tempAuthTokens.get(token);
+        tempAuthTokens.remove(token);
+        return t == null ? -1 : t.first();
     }
 
     public int getIdForToken(String token) {
-        TokenInfo t = tokenTable.get(token);
-        return t == null ? -1 : t.playerId();
+        Pair<Integer, Long> t = tokenTable.get(token);
+        return t == null ? -1 : t.first();
     }
 
     public Authorization authenticate(Auth auth) {
@@ -80,6 +107,7 @@ public class AuthService {
         }
 
         var cred = authAPI.getUserCredentials(auth.username());
+        System.out.println(cred);
         if (!cred.success() || cred.data().isEmpty()) {
             mainLogger.debug("User: " + auth.username() + " does not exist");
             abuseLogger.info("User: " + auth.username() + " does not exist");
@@ -88,10 +116,14 @@ public class AuthService {
 
         if (Crypto.comparePassHash(cred.data().get().passHash(), auth.password())) {
             String token = Crypto.getToken();
-            tokenTable.put(token, new TokenInfo(cred.data().get().playerId()));
+            String authToken = Crypto.getToken();
+            long now = Instant.now().getEpochSecond();
+            int playerId = cred.data().get().playerId();
+            tokenTable.put(token, new Pair<>(playerId, now));
+            tempAuthTokens.put(authToken, new Pair<>(playerId, now));
             mainLogger.info("User: " + auth.username() + " authenticated");
-            authAPI.updateLastLogin(cred.data().get().playerId());
-            return new Authorization(cred.data().get().playerId(), token);
+            authAPI.updateLastLogin(playerId);
+            return new Authorization(playerId, token, authToken);
         }
 
         addInvalidAttempt(auth.username());
@@ -100,13 +132,12 @@ public class AuthService {
     }
 
     public Pair<HttpStatus, String> register(Register reg) {
-        if (reg == null) { new Pair<>(HttpStatus.BAD_REQUEST, "Empty data fields."); }
-        if (reg.username().isEmpty()) {new Pair<>(HttpStatus.BAD_REQUEST, "Empty data fields."); }
-        if (reg.password().isEmpty()) {new Pair<>(HttpStatus.BAD_REQUEST, "Empty data fields."); }
-        if (!reg.isAddressCorrect()) { new Pair<>(HttpStatus.BAD_REQUEST, "Invalid Address."); }
-        if (!reg.isPwCorrect()) { new Pair<>(HttpStatus.BAD_REQUEST, "Invalid password, should be sha256 hash, DEBUG, client shouldn't get this error."); }
+        if (reg == null) { return new Pair<>(HttpStatus.BAD_REQUEST, "Empty data fields."); }
+        if (reg.username().isEmpty()) { return new Pair<>(HttpStatus.BAD_REQUEST, "Empty data fields."); }
+        if (reg.password().isEmpty()) { return new Pair<>(HttpStatus.BAD_REQUEST, "Empty data fields."); }
 
-        if (authAPI.userExists(reg.username()).data().orElse(true)) {
+
+        if (authAPI.userExists(reg.username()).data().orElseThrow()) {
             mainLogger.info("User: " + reg.username() + " | " + reg.displayName() +
                                     " not registered, user already exists");
             return new Pair<>(HttpStatus.CONFLICT, "Username already exists.");
@@ -115,8 +146,7 @@ public class AuthService {
         if (reg.username().length() > 15 || reg.username().contains(" ")
                 || reg.displayName().length() > 15 || reg.displayName().contains(" ")) {
             mainLogger.info("User: " + reg.username() + " | " + reg.displayName() +
-                                    " not registered, invalid user/display name, user/display name must be " +
-                                    "<=15 characters and not contain spaces.");
+                                    " not registered, invalid user/display name");
             return new Pair<>(HttpStatus.BAD_REQUEST, "User and display name should not contain more than 15 characters");
         }
         if (profanityCheck.profanityCheck(reg.displayName())) {
@@ -130,13 +160,13 @@ public class AuthService {
 
         if (playerId == -1) {
             mainLogger.error("User: " + reg.username() + " | " + reg.displayName() +
-                                    " failed to fetch player id, this should not happen");
+                                     " failed to fetch player id, this should not happen");
             return new Pair<>(HttpStatus.BAD_REQUEST, "DEBUG: player id failed to lookup, if you see this report as a bug");
         }
-        itemClient.mintAccountNft(playerId, reg.address());
+        // itemClient.mintAccountNft(playerId, reg.address()); FIXME
         mainLogger.info("User: " + reg.username() + " | " + reg.displayName() +
-                                 " registered");
-        return new Pair<>(HttpStatus.OK, "Account Registered Successfully");
+                                " registered");
+        return new Pair<>(HttpStatus.OK, "Account Registered Successfully\nYou May Login Now");
     }
 
     private boolean isValidAttempt(String username) {

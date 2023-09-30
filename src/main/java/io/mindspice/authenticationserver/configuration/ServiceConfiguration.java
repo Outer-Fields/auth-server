@@ -49,7 +49,9 @@ public class ServiceConfiguration {
             @Qualifier("profanityCheck") ProfanityCheck profanityCheck,
             @Qualifier("itemServerClient") HttpClient httpClient
     ) {
-        return new AuthService(okraAuthAPI, profanityCheck, httpClient);
+        AuthService auth = new AuthService(okraAuthAPI, profanityCheck, httpClient);
+        auth.init();
+        return auth;
     }
 
     @Bean
