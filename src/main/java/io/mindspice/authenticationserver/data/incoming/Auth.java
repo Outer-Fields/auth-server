@@ -11,7 +11,6 @@ public record Auth(
 ) {
     public Auth {
         username = username.toLowerCase();
-        System.out.println(username);
     }
 
 }

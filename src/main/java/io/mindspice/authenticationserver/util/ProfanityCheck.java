@@ -15,7 +15,10 @@ public class ProfanityCheck {
     }
 
     public boolean profanityCheck(String word) {
-        return wordList.contains(word.toLowerCase());
+        for (var badWord : wordList) {
+            if (word.contains(badWord)) { return true; }
+        }
+        return false;
     }
 
     private Set<String> loadWordList(String fileName) {

@@ -7,3 +7,4 @@ itemPassword: ""
 dbServiceUri: "http://192.168.122.140:9191"
 dbServiceUser: "user"
 dbServicePass: "pass"
+isPaused: false

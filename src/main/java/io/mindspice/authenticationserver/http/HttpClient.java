@@ -78,7 +78,6 @@ public class HttpClient {
         httpPost.setHeader(HttpHeaders.CONTENT_TYPE, ContentType.APPLICATION_JSON.getMimeType());
 
         try (CloseableHttpResponse response = client.execute(httpPost)) {
-            System.out.println(response);
             InputStream content = response.getEntity().getContent();
             byte[] bytes = content.readAllBytes();
             return bytes;

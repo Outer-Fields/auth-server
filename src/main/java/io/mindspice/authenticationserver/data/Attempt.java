@@ -8,7 +8,7 @@ import java.time.Instant;
 public  class Attempt {
     int attempts;
     long lastAttempt;
-    int maxAttempts = 5;
+    int maxAttempts = 8;
     long timeoutSec = AuthConfig.get().loginTimeout;
 
     public Attempt() {

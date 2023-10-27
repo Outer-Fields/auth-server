@@ -19,6 +19,7 @@ public class AuthConfig {
     public volatile String dbServiceUri = "";
     public volatile String dbServiceUser = "";
     public volatile String dbServicePass = "";
+    public volatile boolean isPaused = false;
 
     static {
         try {

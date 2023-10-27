@@ -9,11 +9,15 @@ import io.mindspice.authenticationserver.settings.AuthConfig;
 import io.mindspice.authenticationserver.util.ProfanityCheck;
 import io.mindspice.databaseservice.client.DBServiceClient;
 import io.mindspice.databaseservice.client.api.OkraAuthAPI;
+import io.mindspice.jxch.rpc.NodeConfig;
+import io.mindspice.jxch.rpc.http.RPCClient;
+import io.mindspice.jxch.rpc.http.WalletAPI;
 import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 
 import java.awt.image.BufferedImage;
+import java.io.IOException;
 import java.security.KeyManagementException;
 import java.security.KeyStoreException;
 import java.security.NoSuchAlgorithmException;
@@ -44,12 +48,22 @@ public class ServiceConfiguration {
     }
 
     @Bean
+    WalletAPI walletAPI() {
+        try {
+            RPCClient rpcClient = new RPCClient(NodeConfig.loadConfig("wallet_node.yaml"));
+            return new WalletAPI(rpcClient);
+        } catch (IOException e) {
+            throw new RuntimeException("Failed to load wallet_node.yaml");
+        }
+    }
+
+    @Bean
     public AuthService authService(
             @Qualifier("okraAuthAPI") OkraAuthAPI okraAuthAPI,
             @Qualifier("profanityCheck") ProfanityCheck profanityCheck,
-            @Qualifier("itemServerClient") HttpClient httpClient
+            @Qualifier("walletAPI") WalletAPI walletAPI
     ) {
-        AuthService auth = new AuthService(okraAuthAPI, profanityCheck, httpClient);
+        AuthService auth = new AuthService(okraAuthAPI, profanityCheck, walletAPI);
         auth.init();
         return auth;
     }
@@ -76,6 +90,8 @@ public class ServiceConfiguration {
 
         return defaultKaptcha;
     }
+
+
 //    public Producer captchaProducer() {
 //        Properties properties = new Properties();
 //        properties.setProperty("kaptcha.textproducer.char.string", "23456789ABCDEFGHJKLMNPQRSTUVWXYZ");
