@@ -144,6 +144,10 @@ public class AuthService {
         if (reg.password().isEmpty()) { return new Pair<>(HttpStatus.BAD_REQUEST, "Empty password field."); }
         if (reg.displayName().isEmpty()) { return new Pair<>(HttpStatus.BAD_REQUEST, "Empty display name field."); }
         if (reg.offer().isEmpty()) { return new Pair<>(HttpStatus.BAD_REQUEST, "Empty offer field."); }
+        if (!reg.termsAccepted()) {return new Pair<>(HttpStatus.BAD_REQUEST, "Must Accept terms."); }
+        if (!reg.termsHash().equals("5be59c53700aab0802740a4ddd165b67bb359afa6ff41313a05ad32b2458c012")) {
+            return new Pair<>(HttpStatus.BAD_REQUEST, "Invalid terms hash");
+        }
 
         if (authAPI.userExists(reg.username()).data().orElseThrow()) {
             mainLogger.info("User: " + reg.username() + " | " + reg.displayName() +
@@ -173,7 +177,8 @@ public class AuthService {
             return new Pair<>(HttpStatus.BAD_REQUEST, offerValidation.second());
         }
 
-        int playerId = authAPI.registerUser(finalName, reg.displayName(), reg.password()).data().orElse(-1);
+        int playerId = authAPI.registerUser(finalName, reg.displayName(), reg.password(),
+                reg.termsAccepted(), reg.termsHash()).data().orElse(-1);
 
         if (playerId == -1) {
             mainLogger.error(this.getClass(), "User: " + reg.username() + " | " + finalName +
