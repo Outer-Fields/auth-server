@@ -29,7 +29,7 @@ import java.util.Map;
 
 
 @RestController
-@CrossOrigin(origins = "*", allowedHeaders = {"session-id", "user-agent", "content-type"}, exposedHeaders = {"session-id"})
+@CrossOrigin(origins = "*", allowedHeaders = {"session-id", "user-agent", "content-type", "token"}, exposedHeaders = {"session-id", "token"})
 
 //@CrossOrigin
 @RequestMapping("/api")
@@ -53,7 +53,7 @@ public class AccountController {
 
         try {
             if (sessionID == null || auth.captcha() == null) {
-                var authorization = new Authorization(HttpStatus.UNAUTHORIZED, "Client Error.");
+                var authorization = new Authorization(HttpStatus.UNAUTHORIZED, "Session Error, retry.");
                 return new ResponseEntity<>(authorization, HttpStatus.UNAUTHORIZED);
             }
 
@@ -178,7 +178,7 @@ public class AccountController {
 
     @PostMapping("/reauth")
     public ResponseEntity<String> reauth(@RequestHeader("CF-Connecting-IP") String originIp,
-            @RequestHeader(value = "session-id", required = false) String sessionID,
+//            @RequestHeader(value = "session-id", required = false) String sessionID,
             @RequestBody String token) {
 
         if (AuthConfig.get().isPaused) { return new ResponseEntity<>(HttpStatus.SERVICE_UNAVAILABLE); }

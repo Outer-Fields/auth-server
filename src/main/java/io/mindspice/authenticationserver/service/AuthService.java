@@ -1,7 +1,5 @@
 package io.mindspice.authenticationserver.service;
 
-import com.fasterxml.jackson.core.JsonParseException;
-import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.JsonNode;
 import io.mindspice.authenticationserver.data.Attempt;
 import io.mindspice.authenticationserver.data.incoming.Auth;
@@ -11,7 +9,7 @@ import io.mindspice.authenticationserver.data.outgoing.Authorization;
 import io.mindspice.authenticationserver.settings.AuthConfig;
 import io.mindspice.authenticationserver.util.Crypto;
 import io.mindspice.authenticationserver.util.Log;
-import io.mindspice.authenticationserver.util.ProfanityCheck;
+import io.mindspice.authenticationserver.util.ProfanityChecker;
 import io.mindspice.databaseservice.client.api.OkraAuthAPI;
 
 import java.time.Instant;
@@ -22,6 +20,7 @@ import java.util.stream.Collectors;
 import io.mindspice.databaseservice.client.util.Util;
 import io.mindspice.jxch.rpc.http.WalletAPI;
 import io.mindspice.jxch.rpc.schemas.wallet.offers.OfferSummary;
+import io.mindspice.jxch.rpc.util.ChiaUtils;
 import io.mindspice.jxch.rpc.util.bech32.AddressUtil;
 import io.mindspice.mindlib.data.Pair;
 import org.springframework.http.HttpStatus;
@@ -35,7 +34,6 @@ public class AuthService {
     private final Map<String, Pair<Integer, Long>> tempAuthTokens = new ConcurrentHashMap<>();
 
     private final OkraAuthAPI authAPI;
-    private final ProfanityCheck profanityCheck;
     private final WalletAPI walletAPI;
 
     private final ScheduledExecutorService exec = Executors.newSingleThreadScheduledExecutor();
@@ -43,9 +41,8 @@ public class AuthService {
     private static final Log mainLogger = Log.SERVER;
     private static final Log abuseLogger = Log.ABUSE;
 
-    public AuthService(OkraAuthAPI authAPI, ProfanityCheck profanityCheck, WalletAPI walletAPI) {
+    public AuthService(OkraAuthAPI authAPI, WalletAPI walletAPI) {
         this.authAPI = authAPI;
-        this.profanityCheck = profanityCheck;
         this.walletAPI = walletAPI;
     }
 
@@ -103,7 +100,7 @@ public class AuthService {
     }
 
     public Authorization authenticate(String originIp, Auth auth) {
-
+        mainLogger.debug(this.getClass(), auth != null ? auth.toString() : "Null Auth");
         if (auth == null || auth.username() == null || auth.password() == null) {
             mainLogger.debug(this.getClass(), "Authentication contained null value");
             return new Authorization(HttpStatus.BAD_REQUEST, "Empty data fields.");
@@ -138,35 +135,37 @@ public class AuthService {
     }
 
     public Pair<HttpStatus, String> register(String originIp, Register reg) {
-
+        mainLogger.debug(this.getClass(), reg != null ? reg.toString() : "Null RegInfo");
         if (reg == null) { return new Pair<>(HttpStatus.BAD_REQUEST, "Empty data fields."); }
         if (reg.username().isEmpty()) { return new Pair<>(HttpStatus.BAD_REQUEST, "Empty username field."); }
         if (reg.password().isEmpty()) { return new Pair<>(HttpStatus.BAD_REQUEST, "Empty password field."); }
         if (reg.displayName().isEmpty()) { return new Pair<>(HttpStatus.BAD_REQUEST, "Empty display name field."); }
         if (reg.offer().isEmpty()) { return new Pair<>(HttpStatus.BAD_REQUEST, "Empty offer field."); }
         if (!reg.termsAccepted()) {return new Pair<>(HttpStatus.BAD_REQUEST, "Must Accept terms."); }
-        if (!reg.termsHash().equals("5be59c53700aab0802740a4ddd165b67bb359afa6ff41313a05ad32b2458c012")) {
+        if (!reg.termsHash().equals("8e7215065f3e649fb02cad5f41d2313d2daa35eed1908f46bd62de3ffd9eeaa6")) {
             return new Pair<>(HttpStatus.BAD_REQUEST, "Invalid terms hash");
         }
 
         if (authAPI.userExists(reg.username()).data().orElseThrow()) {
-            mainLogger.info("User: " + reg.username() + " | " + reg.displayName() +
+            mainLogger.info(this.getClass(), "User: " + reg.username() + " | " + reg.displayName() +
                     " not registered, user already exists");
             return new Pair<>(HttpStatus.CONFLICT, "Username already exists.");
         }
 
         if (reg.username().length() > 15 || reg.username().contains(" ")
                 || reg.displayName().length() > 15 || reg.displayName().contains(" ")) {
-            mainLogger.info("User: " + reg.username() + " | " + reg.displayName() +
+            abuseLogger.info("User: " + reg.username() + " | " + reg.displayName() + " | OriginIP: " + originIp +
                     " not registered, invalid user/display name");
             return new Pair<>(HttpStatus.BAD_REQUEST, "User and display name should not contain more than 15 characters");
         }
 
-        if (profanityCheck.profanityCheck(reg.displayName())) {
+        var profanityCheck = ProfanityChecker.check(reg.displayName());
+        if (!profanityCheck.first()) {
             mainLogger.info("User: " + reg.username() + " | " + reg.displayName() +
-                    " not registered, profane display name");
+                    " not registered, profane display name | words: " + profanityCheck.second());
             return new Pair<>(HttpStatus.BAD_REQUEST, "Display name should not contain profanity");
         }
+
         String finalName = reg.displayName();
         while (authAPI.userExists(finalName).data().orElseThrow()) {
             finalName = reg.displayName() + ThreadLocalRandom.current().nextInt(0, 999);
@@ -174,10 +173,12 @@ public class AuthService {
 
         Pair<Boolean, String> offerValidation = validateOffer(reg.username(), reg.offer(), true);
         if (!offerValidation.first()) {
+            mainLogger.info("Registration failure username:" + reg.username() + " | OriginIP: " + originIp
+                    +   " | offer: " + reg.offer() + " | Reason: " + offerValidation.second());
             return new Pair<>(HttpStatus.BAD_REQUEST, offerValidation.second());
         }
 
-        int playerId = authAPI.registerUser(finalName, reg.displayName(), reg.password(),
+        int playerId = authAPI.registerUser(reg.username(), finalName, reg.password(),
                 reg.termsAccepted(), reg.termsHash()).data().orElse(-1);
 
         if (playerId == -1) {
@@ -187,12 +188,14 @@ public class AuthService {
         }
 
         authAPI.updatePlayerDid(playerId, offerValidation.second());
-        mainLogger.info("User: " + reg.username() + " | " + reg.displayName() + "registered, with account NFT:" + offerValidation.second());
+        mainLogger.info("User: " + reg.username() + " | " + reg.displayName() + " | OriginIP: " + originIp
+                + " registered, with account NFT:" + offerValidation.second());
 
         return new Pair<>(HttpStatus.OK, "Registration Successful!");
     }
 
     public Pair<HttpStatus, String> resetPassword(String originIp, PassReset resetInfo) {
+        mainLogger.debug(this.getClass(), resetInfo != null ? resetInfo.toString() : "Null ResetInfo");
         if (resetInfo == null) { return new Pair<>(HttpStatus.BAD_REQUEST, "Empty data fields."); }
         if (resetInfo.username().isEmpty()) { return new Pair<>(HttpStatus.BAD_REQUEST, "Empty username fields."); }
         if (resetInfo.password().isEmpty()) { return new Pair<>(HttpStatus.BAD_REQUEST, "Empty password fields."); }
@@ -204,6 +207,7 @@ public class AuthService {
         }
 
         var credentials = authAPI.getUserCredentials(resetInfo.username());
+        mainLogger.debug(this.getClass(), credentials.toString());
         if (!credentials.success() || credentials.data().isEmpty()) {
             mainLogger.info("Failed to get credentials for password reset player: " + resetInfo.username());
             return (new Pair<>(HttpStatus.BAD_REQUEST, "Bad Request"));
@@ -225,11 +229,14 @@ public class AuthService {
         Pair<Boolean, String> offerValidation = validateOffer(resetInfo.username(), resetInfo.offer(), false);
 
         if (!offerValidation.first()) {
+            abuseLogger.info("Reset failure username:" + resetInfo.username() +  " | offer: " + resetInfo.offer()
+                    + " | Reason: " + offerValidation.second());
             return new Pair<>(HttpStatus.BAD_REQUEST, offerValidation.second());
         }
 
         if (playersLauncher.data().get().equals(Util.normalizeHex(offerValidation.second()))) {
             authAPI.updatePlayerPassword(playerId, resetInfo.password());
+            mainLogger.info("Successful Reset password for user: " + resetInfo.username() + " OriginIP:" + originIp);
             return new Pair<>(HttpStatus.OK, "Password successful reset");
         } else {
             abuseLogger.info("Invalid Reset Offer | OriginIP:  " + originIp + " | PlayerId: " + playerId
@@ -249,7 +256,7 @@ public class AuthService {
             Map.Entry<String, Long> offered = summary.offered().entrySet().iterator().next();
             Map.Entry<String, Long> requested = summary.requested().entrySet().iterator().next();
 
-            if (requested.getKey().equals("xch") && requested.getValue() > 100000000000L
+            if (requested.getKey().equals("xch") && requested.getValue() >= ChiaUtils.xchToMojos(1000.0).longValue()
                     && authAPI.isValidDidLauncher(offered.getKey()).data().orElseThrow()) {
                 if (isReg) {
                     if (authAPI.checkForExistingLauncher(offered.getKey()).success()) {

@@ -1,11 +1,8 @@
 package io.mindspice.authenticationserver;
 
-import io.mindspice.authenticationserver.util.ProfanityCheck;
+import io.mindspice.authenticationserver.util.ProfanityChecker;
 import io.mindspice.databaseservice.client.util.Util;
 import org.junit.jupiter.api.Test;
-import org.junit.runner.RunWith;
-import org.springframework.beans.factory.annotation.Qualifier;
-import org.springframework.test.context.junit4.SpringRunner;
 
 
 public class ProfanityCheckTest {
@@ -14,9 +11,8 @@ public class ProfanityCheckTest {
     @Test
 
     void profanityTest() {
-        ProfanityCheck profanityCheck = new ProfanityCheck("profane.txt");
 
-        System.out.println(profanityCheck.profanityCheck("dikeboy"));
+        System.out.println(ProfanityChecker.check("fagg0t"));
     }
 
     @Test

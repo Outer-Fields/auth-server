@@ -15,5 +15,15 @@ public record PassReset (
         username = username.toLowerCase();
         password = Crypto.genPassHash(password);
     }
+
+    @Override
+    public String toString() {
+        final StringBuilder sb = new StringBuilder("PassReset: ");
+        sb.append("\n  username: \"").append(username).append('\"');
+        sb.append(",\n  offer: \"").append(offer).append('\"');
+        sb.append(",\n  captcha: \"").append(captcha).append('\"');
+        sb.append("\n");
+        return sb.toString();
+    }
 }
 
