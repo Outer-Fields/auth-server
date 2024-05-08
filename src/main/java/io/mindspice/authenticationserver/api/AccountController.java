@@ -68,6 +68,8 @@ public class AccountController {
 
             if (!auth.captcha().equals(session.first())) {
                 var authorization = new Authorization(HttpStatus.UNAUTHORIZED, "Invalid Captcha");
+                Log.SERVER.debug(this.getClass(), "Captcha Error: " + auth.username() + " | " + "Session-id:" + sessionID
+                        + "| Expected Captcha: " + session.first() + " | Received:" + auth.captcha());
                 sessionTable.remove(sessionID);
                 return new ResponseEntity<>(authorization, headers, HttpStatus.UNAUTHORIZED);
             }
@@ -101,6 +103,8 @@ public class AccountController {
 
             if (!register.captcha().equals(session.first())) {
                 sessionTable.remove(sessionID);
+                Log.SERVER.debug(this.getClass(), "Captcha Error: " + register.username() + " | "
+                        + "Expected Captcha: " + session.first() + " | Received:" + register.captcha());
                 return new ResponseEntity<>("Invalid Captcha", headers, HttpStatus.UNAUTHORIZED);
             }
 
@@ -125,11 +129,13 @@ public class AccountController {
             headers.set("session-id", sessionID);
             Pair<String, Long> session = sessionTable.get(sessionID);
             if (session == null) {
+                Log.SERVER.debug(this.getClass(), "Captcha Error: " + passReset.username() + " | "
+                        + "Expected Captcha: " + session.first() + " | Received:" + passReset.captcha());
                 return new ResponseEntity<>("Stale Captcha, Try Again.", headers, HttpStatus.UNAUTHORIZED);
             }
-
             if (!passReset.captcha().equals(session.first())) {
                 sessionTable.remove(sessionID);
+
                 return new ResponseEntity<>("Invalid Captcha", headers, HttpStatus.UNAUTHORIZED);
             }
 
@@ -160,11 +166,14 @@ public class AccountController {
             if (sessionID == null || sessionTable.get(sessionID) == null) {
                 String newId = Crypto.getToken();
                 headers.set("session-id", newId);
+                Log.SERVER.debug(this.getClass() , "Session-id:" + newId + "| Issueed Captcha: " + captchaText);
                 sessionTable.put(newId, new Pair<>(captchaText, Instant.now().getEpochSecond()));
             } else {
+                Log.SERVER.debug(this.getClass() , "Session-id:" + sessionID + "| Issueed Captcha: " + captchaText);
                 sessionTable.put(sessionID, new Pair<>(captchaText, Instant.now().getEpochSecond())); // changed
                 headers.set("session-id", sessionID);
             }
+
 
             return ResponseEntity.status(HttpStatus.OK)
                     .headers(headers)
